@@ -1,34 +1,41 @@
 module.exports = async (context) => {
   const { client, m } = context;
+  const fs = require('fs');
   const axios = require('axios');
   const FormData = require('form-data');
 
-  const media = m.quoted || m;
-  const mime = (media.msg || media).mimetype || '';
-  if (!mime) return m.reply('❌ Send or reply to a media file (image, video, or document) to upload.');
+  const q = m.quoted ? m.quoted : m;
+  const mime = (q.msg || q).mimetype || '';
+
+  if (!mime) return m.reply('Quote a file (image, document, etc) to upload using *.gofile*');
+
+  const mediaBuffer = await q.download();
+  if (mediaBuffer.length > 100 * 1024 * 1024) return m.reply('File is too large.');
+
+  const filePath = await client.downloadAndSaveMediaMessage(q);
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath));
+
+  m.reply('Uploading to gofile.io, please wait...');
 
   try {
-    const buffer = await client.downloadMediaMessage(media);
-    const ext = mime.split('/')[1] || 'bin';
-    const fileName = `upload_${Date.now()}.${ext}`;
+    const serverRes = await axios.get('https://api.gofile.io/getServer');
+    const server = serverRes.data.data.server;
 
-    const form = new FormData();
-    form.append('file', buffer, { filename: fileName });
-
-    const upload = await axios.post('https://pixeldrain.com/api/file', form, {
-      headers: form.getHeaders(),
+    const uploadRes = await axios.post(`https://${server}.gofile.io/uploadFile`, form, {
+      headers: form.getHeaders()
     });
 
-    const res = upload.data;
+    fs.unlinkSync(filePath);
 
-    if (!res || !res.success || !res.id) {
-      return m.reply('❌ Failed to upload to Pixeldrain.');
-    }
+    const result = uploadRes.data;
+    if (result.status !== 'ok') return m.reply('Failed to upload to gofile.io.');
 
-    const fileUrl = `https://pixeldrain.com/u/${res.id}`;
-    m.reply(`✅ Upload successful:\n\n📁 *${fileName}*\n🔗 ${fileUrl}`);
+    const fileName = result.data.fileName;
+    const directLink = result.data.downloadPage.replace('/d/', '/download/');
+    m.reply(`Upload Successful!\n\nFile: ${fileName}\nLink: ${directLink}`);
   } catch (err) {
     console.error(err);
-    m.reply('⚠️ Upload error:\n' + err.message);
+    m.reply('Upload error:\n' + err.message);
   }
 };
