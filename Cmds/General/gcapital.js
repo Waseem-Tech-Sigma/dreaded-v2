@@ -76,10 +76,12 @@ module.exports = async (context) => {
         session.turn = players[Math.floor(Math.random() * 2)];
         const currentDisplay = session.players[session.turn].display;
 
-        return await client.sendMessage(groupId, {
+        const introMessage = await client.sendMessage(groupId, {
             text: `✅ @${displayId.split("@")[0]} joined.\n\n🎮 Game starting!\n🔄 First turn: @${currentDisplay.split("@")[0]}\n\nReply to question messages with just the capital city name!`,
             mentions: [displayId, currentDisplay]
-        });
+        }, { quoted: m });
+
+        return await askQuestion(groupId, session.turn, { ...context, m: introMessage });
     }
 
     if (sub === "leave") {
@@ -151,7 +153,7 @@ module.exports = async (context) => {
 };
 
 async function askQuestion(groupId, playerId, context) {
-    const { client } = context;
+    const { client, m } = context;
     const session = sessions[groupId];
     const player = session.players[playerId];
 
@@ -167,8 +169,9 @@ async function askQuestion(groupId, playerId, context) {
     const country = countries[index].country;
 
     const questionMessage = await client.sendMessage(groupId, {
-        text: `🌍 ${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`
-    });
+        text: `🌍 @${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`,
+        mentions: [player.display]
+    }, { quoted: m });
 
     session.questionMessageId = questionMessage.key.id;
     session.eventListenerActive = true;
