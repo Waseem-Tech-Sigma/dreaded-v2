@@ -287,7 +287,7 @@ async function endGame(client, groupId, session) {
                              `🏆 Winner: @${d2.split("@")[0]}`;
 
     await client.sendMessage(groupId, {
-        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/10\n- @${d2.split("@")[0]}: ${s2}/10\n\n${winner}`,
+        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/10\n\n- @${d2.split("@")[0]}: ${s2}/10\n\n${winner} 🎉`,
         mentions: [d1, d2]
     });
 
