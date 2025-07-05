@@ -23,6 +23,16 @@ module.exports = async (context) => {
 
     const session = sessions[groupId];
 
+   
+    if (session.started && !session.finished && session.turn === senderId) {
+        const player = session.players[senderId];
+        if (player && player.awaitingAnswer && !text.startsWith(prefix)) {
+            
+            return await processAnswer(text.toLowerCase().trim(), context);
+        }
+    }
+
+    
     if (args.length === 0) {
         return await m.reply(
             `🎯 *Capital City Game*\n\n` +
@@ -32,14 +42,15 @@ module.exports = async (context) => {
             `• ${prefix}gcapital leave — leave game\n` +
             `• ${prefix}gcapital players — view players\n` +
             `• ${prefix}gcapital scores — view scores\n` +
-            `• ${prefix}gcapital <your_answer> — submit answer`
+            `• ${prefix}gcapital <your_answer> — submit answer\n` +
+            `• OR just type your answer directly when it's your turn!`
         );
     }
 
     const sub = args[0].toLowerCase();
 
     if (sub === "join") {
-        if (session.players[senderId]) return await m.reply("🕹️ You’ve already joined.");
+        if (session.players[senderId]) return await m.reply("🕹️ You've already joined.");
         if (Object.keys(session.players).length >= 2) return await m.reply("❌ 2 players already joined.");
         session.players[senderId] = {
             score: 0,
@@ -59,7 +70,7 @@ module.exports = async (context) => {
             `✅ ${senderId.split("@")[0]} joined.\n\n` +
             `🎮 Game starting!\n` +
             `🔄 First turn: ${session.turn.split("@")[0]}\n\n` +
-            `Submit answers using:\n${prefix}gcapital <answer>`
+            `Submit answers using:\n${prefix}gcapital <answer> OR just type your answer directly!`
         );
         return await askQuestion(groupId, session.turn, context);
     }
@@ -98,6 +109,17 @@ module.exports = async (context) => {
     if (!player.awaitingAnswer) return await m.reply("❌ No question has been asked.");
 
     const userAnswer = args.join(" ").toLowerCase().trim();
+    return await processAnswer(userAnswer, context);
+};
+
+// NEW: Extracted answer processing logic
+async function processAnswer(userAnswer, context) {
+    const { client, m, groupSender } = context;
+    const groupId = m.chat;
+    const senderId = groupSender;
+    const session = sessions[groupId];
+    const player = session.players[senderId];
+
     clearTimeout(session.timeoutRef);
 
     const correct = countries[player.current].capital.toLowerCase();
@@ -132,7 +154,7 @@ module.exports = async (context) => {
     const next = Object.keys(session.players).find(p => p !== senderId);
     session.turn = next;
     return await askQuestion(groupId, next, context);
-};
+}
 
 async function askQuestion(groupId, playerId, context) {
     const { client } = context;
@@ -151,7 +173,7 @@ async function askQuestion(groupId, playerId, context) {
     const country = countries[index].country;
 
     await client.sendMessage(groupId, {
-        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 5 seconds: ${context.prefix}gcapital <answer>`
+        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 5 seconds: ${context.prefix}gcapital <answer> OR just type your answer!`
     });
 
     session.timeoutRef = setTimeout(async () => {
@@ -182,5 +204,5 @@ async function askQuestion(groupId, playerId, context) {
         const next = Object.keys(session.players).find(p => p !== playerId);
         session.turn = next;
         return await askQuestion(groupId, next, context);
-    }, 5000);
+    }, 10000);
 }
