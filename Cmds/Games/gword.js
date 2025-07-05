@@ -1,6 +1,9 @@
 const fs = require("fs");
-const wordListPath = require("word-list");
-const words = fs.readFileSync(wordListPath, "utf-8").split("\n").map(w => w.trim().toLowerCase()).filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
+const wordListPath = require("word-list/words.txt"); 
+const words = fs.readFileSync(wordListPath, "utf-8")
+    .split("\n")
+    .map(w => w.trim().toLowerCase())
+    .filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
 
 const sessions = {}; 
 
