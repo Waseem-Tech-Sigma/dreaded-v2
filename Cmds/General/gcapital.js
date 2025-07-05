@@ -18,7 +18,7 @@ module.exports = async (context) => {
             finished: false,
             turn: null,
             timeoutRef: null,
-            expectingDirectAnswer: false  // NEW: Flag for direct answer mode
+            expectingDirectAnswer: false 
         };
     }
 
@@ -69,7 +69,7 @@ module.exports = async (context) => {
             `✅ ${senderId.split("@")[0]} joined.\n\n` +
             `🎮 Game starting!\n` +
             `🔄 First turn: ${session.turn.split("@")[0]}\n\n` +
-            `Submit answers using:\n${prefix}gcapital <answer> OR just type your answer directly!`
+            `Submit answers using:\n${prefix}gcapital <answer>`
         );
         return await askQuestion(groupId, session.turn, context);
     }
@@ -174,7 +174,7 @@ async function askQuestion(groupId, playerId, context) {
     const country = countries[index].country;
 
     await client.sendMessage(groupId, {
-        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 5 seconds: ${context.prefix}gcapital <answer> OR just type your answer!`
+        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 1minute: ${context.prefix}gcapital <answer> OR just type your answer!`
     });
 
     session.timeoutRef = setTimeout(async () => {
@@ -206,5 +206,5 @@ async function askQuestion(groupId, playerId, context) {
         const next = Object.keys(session.players).find(p => p !== playerId);
         session.turn = next;
         return await askQuestion(groupId, next, context);
-    }, 20000);
+    }, 60000);
 }
