@@ -95,7 +95,7 @@ async function startDreaded() {
         cachedGroupMetadata: async (jid) => {
             const cached = groupCache.get(jid);
             if (cached) {
-                console.log(`Using cached metadata for group: ${jid}`);
+                
                 return cached;
             }
             return null;
