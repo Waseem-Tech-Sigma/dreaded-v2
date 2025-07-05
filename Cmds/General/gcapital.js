@@ -19,7 +19,7 @@ module.exports = async (context) => {
             turn: null,
             timeoutRef: null,
             questionMessageId: null, 
-            eventListenerActive: false
+            eventListenerActive: false 
         };
     }
 
@@ -34,8 +34,7 @@ module.exports = async (context) => {
             `• ${prefix}gcapital leave — leave game\n` +
             `• ${prefix}gcapital players — view players\n` +
             `• ${prefix}gcapital scores — view scores\n` +
-            `• ${prefix}gcapital <your_answer> — submit answer\n` +
-            `• OR reply to the question message with your answer!`
+            `• Reply to question messages with just the capital city name!`
         );
     }
 
@@ -62,7 +61,7 @@ module.exports = async (context) => {
             `✅ ${senderId.split("@")[0]} joined.\n\n` +
             `🎮 Game starting!\n` +
             `🔄 First turn: ${session.turn.split("@")[0]}\n\n` +
-            `Submit answers using:\n${prefix}gcapital <answer> OR reply to the question!`
+            `Reply to question messages with just the capital city name!`
         );
         return await askQuestion(groupId, session.turn, context);
     }
@@ -96,15 +95,11 @@ module.exports = async (context) => {
         return await m.reply(`📊 Scores:\n${scores}`);
     }
 
+    
     if (!session.started || session.finished) return;
-    if (session.turn !== senderId) return await m.reply(`❌ Not your turn.`);
-
-    const player = session.players[senderId];
-    if (!player.awaitingAnswer) return await m.reply("❌ No question has been asked.");
-
-    const userAnswer = args.join(" ").toLowerCase().trim();
-    return await processAnswer(userAnswer, senderId, groupId, context);
+    return await m.reply("❌ Please reply to the question message with just the capital city name!");
 };
+
 
 async function processAnswer(userAnswer, senderId, groupId, context) {
     const { client, m } = context;
@@ -114,8 +109,7 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
     if (!player || !player.awaitingAnswer) return;
 
     clearTimeout(session.timeoutRef);
-    session.eventListenerActive = false; 
-
+    session.eventListenerActive = false;
     const correct = countries[player.current].capital.toLowerCase();
 
     if (userAnswer === correct) {
@@ -166,9 +160,9 @@ async function askQuestion(groupId, playerId, context) {
 
     const country = countries[index].country;
 
-   
+    
     const questionMessage = await client.sendMessage(groupId, {
-        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer OR use: ${context.prefix}gcapital <answer>`
+        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`
     });
 
     session.questionMessageId = questionMessage.key.id;
@@ -190,7 +184,7 @@ async function askQuestion(groupId, playerId, context) {
         const isReplyToQuestion = messageContent.message.extendedTextMessage?.contextInfo?.stanzaId === session.questionMessageId;
 
         if (isReplyToQuestion && chatId === groupId && responderId === playerId) {
-          
+           
             client.ev.off("messages.upsert", eventHandler);
             session.eventListenerActive = false;
 
@@ -199,7 +193,7 @@ async function askQuestion(groupId, playerId, context) {
                 react: { text: '🤖', key: messageContent.key }
             });
 
-          
+           
             const userAnswer = responseText.toLowerCase().trim();
             return await processAnswer(userAnswer, playerId, groupId, context);
         }
