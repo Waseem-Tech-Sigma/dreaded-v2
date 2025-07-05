@@ -79,7 +79,7 @@ module.exports = async (context) => {
         return await client.sendMessage(groupId, {
             text: `✅ @${displayId.split("@")[0]} joined.\n\n🎮 Game starting!\n🔄 First turn: @${currentDisplay.split("@")[0]}\n\nReply to question messages with just the capital city name!`,
             mentions: [displayId, currentDisplay]
-        }, { quoted: m });
+        });
     }
 
     if (sub === "leave") {
