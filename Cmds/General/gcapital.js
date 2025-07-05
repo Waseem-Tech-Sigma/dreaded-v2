@@ -42,7 +42,7 @@ module.exports = async (context) => {
             `• ${prefix}gcapital players — view players\n` +
             `• ${prefix}gcapital scores — view scores\n` +
             `• ${prefix}gcapital <your_answer> — submit answer\n` +
-            `• OR just type your answer directly when it's your turn!`
+            `• See yah`
         );
     }
 
