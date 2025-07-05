@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 
-const wordListPath = path.join(__dirname, "node_modules", "word-list", "words.txt");
+const wordListPath = path.resolve(__dirname, "../../node_modules/word-list/words.txt");
 
 const words = fs.readFileSync(wordListPath, "utf-8")
   .split("\n")
