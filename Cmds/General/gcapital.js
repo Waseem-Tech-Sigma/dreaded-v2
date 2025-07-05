@@ -1,11 +1,7 @@
-const countries = [
-    { country: "Kenya", capital: "Nairobi" },
-    { country: "Nigeria", capital: "Abuja" },
-    { country: "France", capital: "Paris" },
-    { country: "Brazil", capital: "Brasília" },
-    { country: "Japan", capital: "Tokyo" }
-];
+const fs = require("fs");
+const path = require("path");
 
+const countries = JSON.parse(fs.readFileSync(path.join(__dirname, "countries.json")));
 const sessions = {};
 
 module.exports = async (context) => {
@@ -13,14 +9,15 @@ module.exports = async (context) => {
     const groupId = m.chat;
     const senderId = groupSender;
     const text = m.text.trim();
-    const args = text.split(" ").slice(1); 
+    const args = text.split(" ").slice(1);
 
     if (!sessions[groupId]) {
         sessions[groupId] = {
             players: {},
             started: false,
             finished: false,
-            turn: null
+            turn: null,
+            timeoutRef: null
         };
     }
 
@@ -62,7 +59,7 @@ module.exports = async (context) => {
             `✅ ${senderId.split("@")[0]} joined.\n\n` +
             `🎮 Game starting!\n` +
             `🔄 First turn: ${session.turn.split("@")[0]}\n\n` +
-            `Submit answers using:\n${prefix}gcapital <your_answer>`
+            `Submit answers using:\n${prefix}gcapital <answer>`
         );
         return await askQuestion(groupId, session.turn, context);
     }
@@ -70,6 +67,7 @@ module.exports = async (context) => {
     if (sub === "leave") {
         if (!session.players[senderId]) return await m.reply("🚫 You're not in this game.");
         const opponent = Object.keys(session.players).find(p => p !== senderId);
+        clearTimeout(session.timeoutRef);
         delete sessions[groupId];
         if (opponent) {
             return await m.reply(`🚪 You left the game.\n🏆 ${opponent.split("@")[0]} wins by default!`);
@@ -94,30 +92,27 @@ module.exports = async (context) => {
     }
 
     if (!session.started || session.finished) return;
-
-    if (session.turn !== senderId) {
-        return await m.reply(`❌ Not your turn. It’s ${session.turn.split("@")[0]}'s turn.`);
-    }
+    if (session.turn !== senderId) return await m.reply(`❌ Not your turn.`);
 
     const player = session.players[senderId];
-    if (!player.awaitingAnswer) {
-        return await m.reply("❌ No question has been asked. Wait for your turn.");
-    }
+    if (!player.awaitingAnswer) return await m.reply("❌ No question has been asked.");
 
     const userAnswer = args.join(" ").toLowerCase().trim();
-    const correctAnswer = countries[player.current].capital.toLowerCase();
+    clearTimeout(session.timeoutRef);
 
-    if (userAnswer === correctAnswer) {
+    const correct = countries[player.current].capital.toLowerCase();
+
+    if (userAnswer === correct) {
         player.score++;
         await m.reply("✅ Correct!");
     } else {
-        await m.reply(`❌ Incorrect. The correct answer was: *${countries[player.current].capital}*`);
+        await m.reply(`❌ Incorrect. Correct answer: *${countries[player.current].capital}*`);
     }
 
     player.awaitingAnswer = false;
     player.questionIndex++;
 
-    const allDone = Object.values(session.players).every(p => p.questionIndex >= 5);
+    const allDone = Object.values(session.players).every(p => p.questionIndex >= 10);
     if (allDone) {
         session.finished = true;
         const [p1, p2] = Object.keys(session.players);
@@ -134,9 +129,9 @@ module.exports = async (context) => {
         return;
     }
 
-    const nextPlayer = Object.keys(session.players).find(p => p !== senderId);
-    session.turn = nextPlayer;
-    return await askQuestion(groupId, nextPlayer, context);
+    const next = Object.keys(session.players).find(p => p !== senderId);
+    session.turn = next;
+    return await askQuestion(groupId, next, context);
 };
 
 async function askQuestion(groupId, playerId, context) {
@@ -154,7 +149,38 @@ async function askQuestion(groupId, playerId, context) {
     player.awaitingAnswer = true;
 
     const country = countries[index].country;
-    return await client.sendMessage(groupId, {
-        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply with: ${context.prefix}gcapital <answer>`
+
+    await client.sendMessage(groupId, {
+        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 5 seconds: ${context.prefix}gcapital <answer>`
     });
+
+    session.timeoutRef = setTimeout(async () => {
+        if (!player.awaitingAnswer) return;
+        player.awaitingAnswer = false;
+        player.questionIndex++;
+        await client.sendMessage(groupId, {
+            text: `⏱️ Time's up for ${playerId.split("@")[0]}!`
+        });
+
+        const allDone = Object.values(session.players).every(p => p.questionIndex >= 5);
+        if (allDone) {
+            session.finished = true;
+            const [p1, p2] = Object.keys(session.players);
+            const s1 = session.players[p1].score;
+            const s2 = session.players[p2].score;
+            const winner =
+                s1 === s2 ? "🤝 It's a tie!" :
+                s1 > s2 ? `🏆 Winner: ${p1.split("@")[0]}` :
+                          `🏆 Winner: ${p2.split("@")[0]}`;
+            await client.sendMessage(groupId, {
+                text: `🏁 Game Over!\n\nScores:\n- ${p1.split("@")[0]}: ${s1}/10\n- ${p2.split("@")[0]}: ${s2}/10\n\n${winner}`
+            });
+            delete sessions[groupId];
+            return;
+        }
+
+        const next = Object.keys(session.players).find(p => p !== playerId);
+        session.turn = next;
+        return await askQuestion(groupId, next, context);
+    }, 5000);
 }
