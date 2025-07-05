@@ -19,10 +19,7 @@ module.exports = async (context) => {
   m.reply('Uploading to gofile.io, please wait...');
 
   try {
-    const serverRes = await axios.get('https://api.gofile.io/getServer');
-    const server = serverRes.data.data.server;
-
-    const res = await axios.post(`https://${server}.gofile.io/uploadFile`, form, {
+    const res = await axios.post('https://store1.gofile.io/uploadFile', form, {
       headers: form.getHeaders()
     });
 
