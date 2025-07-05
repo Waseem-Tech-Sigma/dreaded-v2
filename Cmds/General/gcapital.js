@@ -17,19 +17,18 @@ module.exports = async (context) => {
             started: false,
             finished: false,
             turn: null,
-            timeoutRef: null
+            timeoutRef: null,
+            expectingDirectAnswer: false  // NEW: Flag for direct answer mode
         };
     }
 
     const session = sessions[groupId];
 
    
-    if (session.started && !session.finished && session.turn === senderId) {
-        const player = session.players[senderId];
-        if (player && player.awaitingAnswer && !text.startsWith(prefix)) {
-            
-            return await processAnswer(text.toLowerCase().trim(), context);
-        }
+    if (session.expectingDirectAnswer && session.turn === senderId && !text.startsWith(prefix)) {
+       
+        session.expectingDirectAnswer = false; 
+        return await processAnswer(text.toLowerCase().trim(), context);
     }
 
     
@@ -109,10 +108,11 @@ module.exports = async (context) => {
     if (!player.awaitingAnswer) return await m.reply("❌ No question has been asked.");
 
     const userAnswer = args.join(" ").toLowerCase().trim();
+    session.expectingDirectAnswer = false; 
     return await processAnswer(userAnswer, context);
 };
 
-// NEW: Extracted answer processing logic
+
 async function processAnswer(userAnswer, context) {
     const { client, m, groupSender } = context;
     const groupId = m.chat;
@@ -145,7 +145,7 @@ async function processAnswer(userAnswer, context) {
             s1 > s2 ? `🏆 Winner: ${p1.split("@")[0]}` :
                       `🏆 Winner: ${p2.split("@")[0]}`;
         await m.reply(
-            `🏁 Game Over!\n\nScores:\n- ${p1.split("@")[0]}: ${s1}/5\n- ${p2.split("@")[0]}: ${s2}/5\n\n${winner}`
+            `🏁 Game Over!\n\nScores:\n- ${p1.split("@")[0]}: ${s1}/10\n- ${p2.split("@")[0]}: ${s2}/10\n\n${winner}`
         );
         delete sessions[groupId];
         return;
@@ -169,6 +169,7 @@ async function askQuestion(groupId, playerId, context) {
     player.current = index;
     player.asked.push(index);
     player.awaitingAnswer = true;
+    session.expectingDirectAnswer = true; 
 
     const country = countries[index].country;
 
@@ -180,6 +181,7 @@ async function askQuestion(groupId, playerId, context) {
         if (!player.awaitingAnswer) return;
         player.awaitingAnswer = false;
         player.questionIndex++;
+        session.expectingDirectAnswer = false; 
         await client.sendMessage(groupId, {
             text: `⏱️ Time's up for ${playerId.split("@")[0]}!`
         });
@@ -204,5 +206,5 @@ async function askQuestion(groupId, playerId, context) {
         const next = Object.keys(session.players).find(p => p !== playerId);
         session.turn = next;
         return await askQuestion(groupId, next, context);
-    }, 10000);
+    }, 20000);
 }
