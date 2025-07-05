@@ -19,21 +19,21 @@ module.exports = async (context) => {
   m.reply('Uploading to gofile.io, please wait...');
 
   try {
-    const serverRes = await axios.get('https://api.gofile.io/getServer');
-    const server = serverRes.data.data.server;
-
-    const uploadRes = await axios.post(`https://${server}.gofile.io/uploadFile`, form, {
+    const res = await axios.post('https://store1.gofile.io/uploadFile', form, {
       headers: form.getHeaders()
     });
 
     fs.unlinkSync(filePath);
 
-    const result = uploadRes.data;
-    if (result.status !== 'ok') return m.reply('Failed to upload to gofile.io.');
+    if (res.data.status === 'ok') {
+      const link = res.data.data.downloadPage;
+      const directLink = link.replace('/d/', '/download/');
+      const fileName = res.data.data.fileName;
 
-    const fileName = result.data.fileName;
-    const directLink = result.data.downloadPage.replace('/d/', '/download/');
-    m.reply(`Upload Successful!\n\nFile: ${fileName}\nLink: ${directLink}`);
+      m.reply(`Upload Successful!\n\nFile: ${fileName}\n\n🌐 Page: ${link}\n📥 Direct: ${directLink}`);
+    } else {
+      m.reply('Failed to upload to gofile.io.');
+    }
   } catch (err) {
     console.error(err);
     m.reply('Upload error:\n' + err.message);
