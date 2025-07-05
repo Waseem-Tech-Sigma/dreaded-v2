@@ -167,8 +167,7 @@ async function askQuestion(groupId, playerId, context) {
     const country = countries[index].country;
 
     const questionMessage = await client.sendMessage(groupId, {
-        text: `🌍 @${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`,
-        mentions: [player.display]
+        text: `🌍 ${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`
     });
 
     session.questionMessageId = questionMessage.key.id;
