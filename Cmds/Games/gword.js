@@ -1,5 +1,5 @@
 const fs = require("fs");
-const wordListPath = require.resolve("word-list/word-list.txt");
+const wordListPath = require.resolve("word-list/words.txt");
 const words = fs.readFileSync(wordListPath, "utf-8")
   .split("\n")
   .map(w => w.trim().toLowerCase())
