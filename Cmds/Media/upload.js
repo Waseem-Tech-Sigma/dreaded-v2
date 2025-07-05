@@ -16,81 +16,101 @@ module.exports = async (context) => {
   const tempFile = path.join(__dirname, `upload_${Date.now()}`);
   fs.writeFileSync(tempFile, mediaBuffer);
 
-  m.reply('⏳ Uploading file, please wait...');
+  m.reply('⏳ Starting upload...');
 
   const providers = [
-    async () => {
-      const form = new FormData();
-      form.append('file', fs.createReadStream(tempFile));
-      const res = await axios.post('https://pixeldrain.com/api/file/anonymous', form, {
-        headers: form.getHeaders()
-      });
-      const id = res.data.id;
-      return {
-        name: 'Pixeldrain',
-        page: `https://pixeldrain.com/u/${id}`,
-        direct: `https://pixeldrain.com/api/file/${id}`
-      };
+    {
+      name: 'Catbox.moe',
+      upload: async () => {
+        const form = new FormData();
+        form.append('reqtype', 'fileupload');
+        form.append('fileToUpload', fs.createReadStream(tempFile));
+        const res = await axios.post('https://catbox.moe/user/api.php', form, {
+          headers: form.getHeaders()
+        });
+        if (!res.data.startsWith('https://')) throw new Error('Invalid Catbox response');
+        return { page: res.data, direct: res.data };
+      }
     },
-    async () => {
-      const form = new FormData();
-      form.append('file', fs.createReadStream(tempFile));
-      const res = await axios.post('https://file.io/', form, {
-        headers: form.getHeaders()
-      });
-      if (!res.data.success) throw new Error('File.io failed');
-      return {
-        name: 'File.io',
-        page: res.data.link,
-        direct: res.data.link
-      };
+    {
+      name: 'Pixeldrain',
+      upload: async () => {
+        const form = new FormData();
+        form.append('file', fs.createReadStream(tempFile));
+        const res = await axios.post('https://pixeldrain.com/api/file/anonymous', form, {
+          headers: form.getHeaders()
+        });
+        const id = res.data.id;
+        return {
+          page: `https://pixeldrain.com/u/${id}`,
+          direct: `https://pixeldrain.com/api/file/${id}`
+        };
+      }
     },
-    async () => {
-      const fileName = `upload_${Date.now()}.bin`;
-      const res = await axios.put(`https://transfer.sh/${fileName}`, fs.createReadStream(tempFile), {
-        headers: { 'Content-Type': 'application/octet-stream' }
-      });
-      return {
-        name: 'Transfer.sh',
-        page: res.data,
-        direct: res.data
-      };
+    {
+      name: 'File.io',
+      upload: async () => {
+        const form = new FormData();
+        form.append('file', fs.createReadStream(tempFile));
+        const res = await axios.post('https://file.io/', form, {
+          headers: form.getHeaders()
+        });
+        if (!res.data.success) throw new Error('Upload failed');
+        return { page: res.data.link, direct: res.data.link };
+      }
     },
-    async () => {
-      const form = new FormData();
-      form.append('file', fs.createReadStream(tempFile));
-      const res = await axios.post('https://uguu.se/upload.php', form, {
-        headers: form.getHeaders()
-      });
-      if (!res.data.files || res.data.files.length === 0) throw new Error('Uguu failed');
-      return {
-        name: 'Uguu.se',
-        page: res.data.files[0].url,
-        direct: res.data.files[0].url
-      };
+    {
+      name: 'Transfer.sh',
+      upload: async () => {
+        const fileName = `upload_${Date.now()}.bin`;
+        const res = await axios.put(`https://transfer.sh/${fileName}`, fs.createReadStream(tempFile), {
+          headers: { 'Content-Type': 'application/octet-stream' }
+        });
+        return { page: res.data, direct: res.data };
+      }
     },
-    async () => {
-      const form = new FormData();
-      form.append('file', fs.createReadStream(tempFile));
-      const res = await axios.post('https://api.bayfiles.com/upload', form, {
-        headers: form.getHeaders()
-      });
-      const fileData = res.data.data.file;
-      return {
-        name: 'Bayfiles',
-        page: fileData.url.short,
-        direct: fileData.url.full
-      };
+    {
+      name: 'Uguu.se',
+      upload: async () => {
+        const form = new FormData();
+        form.append('file', fs.createReadStream(tempFile));
+        const res = await axios.post('https://uguu.se/upload.php', form, {
+          headers: form.getHeaders()
+        });
+        if (!res.data.files || res.data.files.length === 0) throw new Error('No file returned');
+        return {
+          page: res.data.files[0].url,
+          direct: res.data.files[0].url
+        };
+      }
+    },
+    {
+      name: 'Bayfiles',
+      upload: async () => {
+        const form = new FormData();
+        form.append('file', fs.createReadStream(tempFile));
+        const res = await axios.post('https://api.bayfiles.com/upload', form, {
+          headers: form.getHeaders()
+        });
+        const fileData = res.data.data.file;
+        return {
+          page: fileData.url.short,
+          direct: fileData.url.full
+        };
+      }
     }
   ];
 
-  for (let provider of providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const { name, upload } = providers[i];
     try {
-      const result = await provider();
+      await m.reply(`📡 Trying ${name}...`);
+      const result = await upload();
       fs.unlinkSync(tempFile);
-      return m.reply(`✅ Uploaded to ${result.name}!\n\n🌐 Page: ${result.page}\n📥 Direct: ${result.direct}`);
+      return m.reply(`✅ Uploaded to ${name}!\n\n🌐 Page: ${result.page}\n📥 Direct: ${result.direct}`);
     } catch (err) {
-      console.error(`[Uploader] ${provider.name || 'Provider'} failed:`, err.message);
+      const next = providers[i + 1] ? providers[i + 1].name : 'no other providers';
+      await m.reply(`⚠️ ${name} failed: ${err.message}\n🔁 Trying ${next}...`);
     }
   }
 
