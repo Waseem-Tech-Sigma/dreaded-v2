@@ -28,23 +28,33 @@ module.exports = async (context) => {
     const session = sessions[groupId];
 
     if (args.length === 0) {
-        return await m.reply(
-            `🎯 *Capital City Game*\n\n` +
-            `2 players required. Turn-based quiz.\n\n` +
-            `📘 *Usage:*\n` +
-            `• ${prefix}gcapital join — join game\n` +
-            `• ${prefix}gcapital leave — leave game\n` +
-            `• ${prefix}gcapital players — view players\n` +
-            `• ${prefix}gcapital scores — view scores\n` +
-            `• Reply to question messages with just the capital city name!`
-        );
+        return await client.sendMessage(groupId, {
+            text:
+                `🎯 *Capital City Game*\n\n` +
+                `2 players required. Turn-based quiz.\n\n` +
+                `📘 *Usage:*\n` +
+                `• ${prefix}gcapital join — join game\n` +
+                `• ${prefix}gcapital leave — leave game\n` +
+                `• ${prefix}gcapital players — view players\n` +
+                `• ${prefix}gcapital scores — view scores\n` +
+                `• Reply to question messages with just the capital city name!`
+        }, { quoted: m });
     }
 
     const sub = args[0].toLowerCase();
 
     if (sub === "join") {
-        if (session.players[senderId]) return await m.reply("🕹️ You've already joined.");
-        if (Object.keys(session.players).length >= 2) return await m.reply("❌ 2 players already joined.");
+        if (session.players[senderId]) {
+            return await client.sendMessage(groupId, {
+                text: `🕹️ You've already joined.`
+            }, { quoted: m });
+        }
+
+        if (Object.keys(session.players).length >= 2) {
+            return await client.sendMessage(groupId, {
+                text: `❌ 2 players already joined.`
+            }, { quoted: m });
+        }
 
         session.players[senderId] = {
             display: displayId,
@@ -56,25 +66,28 @@ module.exports = async (context) => {
         };
 
         if (Object.keys(session.players).length === 1) {
-            return await m.reply("✅ You joined.\n⏳ Waiting for opponent...");
+            return await client.sendMessage(groupId, {
+                text: `✅ You joined.\n⏳ Waiting for opponent...`
+            }, { quoted: m });
         }
 
         session.started = true;
         const players = Object.keys(session.players);
         session.turn = players[Math.floor(Math.random() * 2)];
+        const currentDisplay = session.players[session.turn].display;
 
-        await m.reply(
-            `✅ ${displayId.split("@")[0]} joined.\n\n` +
-            `🎮 Game starting!\n` +
-            `🔄 First turn: ${session.players[session.turn].display.split("@")[0]}\n\n` +
-            `Reply to question messages with just the capital city name!`
-        );
-
-        return await askQuestion(groupId, session.turn, context);
+        return await client.sendMessage(groupId, {
+            text: `✅ @${displayId.split("@")[0]} joined.\n\n🎮 Game starting!\n🔄 First turn: @${currentDisplay.split("@")[0]}\n\nReply to question messages with just the capital city name!`,
+            mentions: [displayId, currentDisplay]
+        }, { quoted: m });
     }
 
     if (sub === "leave") {
-        if (!session.players[senderId]) return await m.reply("🚫 You're not in this game.");
+        if (!session.players[senderId]) {
+            return await client.sendMessage(groupId, {
+                text: `🚫 You're not in this game.`
+            }, { quoted: m });
+        }
 
         const opponent = Object.keys(session.players).find(p => p !== senderId);
         clearTimeout(session.timeoutRef);
@@ -87,29 +100,54 @@ module.exports = async (context) => {
         delete sessions[groupId];
 
         if (opponent) {
-            return await m.reply(`🚪 You left the game.\n🏆 ${session.players[opponent].display.split("@")[0]} wins by default!`);
+            return await client.sendMessage(groupId, {
+                text: `🚪 You left the game.\n🏆 @${session.players[opponent].display.split("@")[0]} wins by default!`,
+                mentions: [session.players[opponent].display]
+            }, { quoted: m });
         } else {
-            return await m.reply("🚪 You left the game.");
+            return await client.sendMessage(groupId, {
+                text: `🚪 You left the game.`
+            }, { quoted: m });
         }
     }
 
     if (sub === "players") {
-        const players = Object.values(session.players);
-        if (players.length === 0) return await m.reply("No one has joined.");
-        const list = players.map(p => `- ${p.display.split("@")[0]}`).join("\n");
-        return await m.reply(`👥 Players:\n${list}`);
+        const playerList = Object.values(session.players);
+        if (playerList.length === 0) {
+            return await client.sendMessage(groupId, {
+                text: `No one has joined.`
+            }, { quoted: m });
+        }
+
+        const textList = playerList.map(p => `- @${p.display.split("@")[0]}`).join("\n");
+        return await client.sendMessage(groupId, {
+            text: `👥 Players:\n${textList}`,
+            mentions: playerList.map(p => p.display)
+        }, { quoted: m });
     }
 
     if (sub === "scores") {
-        if (!session.started) return await m.reply("Game hasn't started yet.");
-        const scores = Object.entries(session.players).map(
-            ([p, d]) => `- ${d.display.split("@")[0]}: ${d.score}/10`
+        if (!session.started) {
+            return await client.sendMessage(groupId, {
+                text: `Game hasn't started yet.`
+            }, { quoted: m });
+        }
+
+        const scoresText = Object.values(session.players).map(
+            p => `- @${p.display.split("@")[0]}: ${p.score}/10`
         ).join("\n");
-        return await m.reply(`📊 Scores:\n${scores}`);
+
+        return await client.sendMessage(groupId, {
+            text: `📊 Scores:\n${scoresText}`,
+            mentions: Object.values(session.players).map(p => p.display)
+        }, { quoted: m });
     }
 
-    if (!session.started || session.finished) return;
-    return await m.reply("❌ Please reply to the question message with just the capital city name!");
+    if (!session.started || session.finished) {
+        return await client.sendMessage(groupId, {
+            text: `❌ Please reply to the question message with just the capital city name!`
+        }, { quoted: m });
+    }
 };
 
 async function askQuestion(groupId, playerId, context) {
@@ -129,7 +167,8 @@ async function askQuestion(groupId, playerId, context) {
     const country = countries[index].country;
 
     const questionMessage = await client.sendMessage(groupId, {
-        text: `🌍 ${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`
+        text: `🌍 @${player.display.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer!`,
+        mentions: [player.display]
     });
 
     session.questionMessageId = questionMessage.key.id;
@@ -180,22 +219,13 @@ async function askQuestion(groupId, playerId, context) {
         player.questionIndex++;
 
         await client.sendMessage(groupId, {
-            text: `⏱️ Time's up for ${player.display.split("@")[0]}!`
+            text: `⏱️ Time's up for @${player.display.split("@")[0]}!`,
+            mentions: [player.display]
         });
 
         const allDone = Object.values(session.players).every(p => p.questionIndex >= 10);
         if (allDone) {
-            session.finished = true;
-            const [p1, p2] = Object.keys(session.players);
-            const s1 = session.players[p1].score;
-            const s2 = session.players[p2].score;
-            const winner = s1 === s2 ? "🤝 It's a tie!" :
-                           s1 > s2 ? `🏆 Winner: ${session.players[p1].display.split("@")[0]}` :
-                                     `🏆 Winner: ${session.players[p2].display.split("@")[0]}`;
-            await client.sendMessage(groupId, {
-                text: `🏁 Game Over!\n\nScores:\n- ${session.players[p1].display.split("@")[0]}: ${s1}/10\n- ${session.players[p2].display.split("@")[0]}: ${s2}/10\n\n${winner}`
-            });
-            delete sessions[groupId];
+            await endGame(client, groupId, session);
             return;
         }
 
@@ -219,9 +249,13 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
 
     if (userAnswer === correct) {
         player.score++;
-        await m.reply("✅ Correct!");
+        await client.sendMessage(groupId, {
+            text: `✅ Correct!`
+        }, { quoted: m });
     } else {
-        await m.reply(`❌ Incorrect. Correct answer: *${countries[player.current].capital}*`);
+        await client.sendMessage(groupId, {
+            text: `❌ Incorrect. Correct answer: *${countries[player.current].capital}*`
+        }, { quoted: m });
     }
 
     player.awaitingAnswer = false;
@@ -229,21 +263,31 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
 
     const allDone = Object.values(session.players).every(p => p.questionIndex >= 10);
     if (allDone) {
-        session.finished = true;
-        const [p1, p2] = Object.keys(session.players);
-        const s1 = session.players[p1].score;
-        const s2 = session.players[p2].score;
-        const winner = s1 === s2 ? "🤝 It's a tie!" :
-                       s1 > s2 ? `🏆 Winner: ${session.players[p1].display.split("@")[0]}` :
-                                 `🏆 Winner: ${session.players[p2].display.split("@")[0]}`;
-        await client.sendMessage(groupId, {
-            text: `🏁 Game Over!\n\nScores:\n- ${session.players[p1].display.split("@")[0]}: ${s1}/10\n- ${session.players[p2].display.split("@")[0]}: ${s2}/10\n\n${winner}`
-        });
-        delete sessions[groupId];
+        await endGame(client, groupId, session);
         return;
     }
 
     const next = Object.keys(session.players).find(p => p !== senderId);
     session.turn = next;
     return await askQuestion(groupId, next, context);
+}
+
+async function endGame(client, groupId, session) {
+    session.finished = true;
+    const [p1, p2] = Object.keys(session.players);
+    const s1 = session.players[p1].score;
+    const s2 = session.players[p2].score;
+    const d1 = session.players[p1].display;
+    const d2 = session.players[p2].display;
+
+    const winner = s1 === s2 ? "🤝 It's a tie!" :
+                   s1 > s2 ? `🏆 Winner: @${d1.split("@")[0]}` :
+                             `🏆 Winner: @${d2.split("@")[0]}`;
+
+    await client.sendMessage(groupId, {
+        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/10\n- @${d2.split("@")[0]}: ${s2}/10\n\n${winner}`,
+        mentions: [d1, d2]
+    });
+
+    delete sessions[groupId];
 }
