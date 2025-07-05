@@ -18,20 +18,13 @@ module.exports = async (context) => {
             finished: false,
             turn: null,
             timeoutRef: null,
-            expectingDirectAnswer: false 
+            questionMessageId: null, 
+            eventListenerActive: false
         };
     }
 
     const session = sessions[groupId];
 
-   
-    if (session.expectingDirectAnswer && session.turn === senderId && !text.startsWith(prefix)) {
-       
-        session.expectingDirectAnswer = false; 
-        return await processAnswer(text.toLowerCase().trim(), context);
-    }
-
-    
     if (args.length === 0) {
         return await m.reply(
             `🎯 *Capital City Game*\n\n` +
@@ -42,7 +35,7 @@ module.exports = async (context) => {
             `• ${prefix}gcapital players — view players\n` +
             `• ${prefix}gcapital scores — view scores\n` +
             `• ${prefix}gcapital <your_answer> — submit answer\n` +
-            `• See yah`
+            `• OR reply to the question message with your answer!`
         );
     }
 
@@ -69,7 +62,7 @@ module.exports = async (context) => {
             `✅ ${senderId.split("@")[0]} joined.\n\n` +
             `🎮 Game starting!\n` +
             `🔄 First turn: ${session.turn.split("@")[0]}\n\n` +
-            `Submit answers using:\n${prefix}gcapital <answer>`
+            `Submit answers using:\n${prefix}gcapital <answer> OR reply to the question!`
         );
         return await askQuestion(groupId, session.turn, context);
     }
@@ -78,6 +71,8 @@ module.exports = async (context) => {
         if (!session.players[senderId]) return await m.reply("🚫 You're not in this game.");
         const opponent = Object.keys(session.players).find(p => p !== senderId);
         clearTimeout(session.timeoutRef);
+        
+        session.eventListenerActive = false;
         delete sessions[groupId];
         if (opponent) {
             return await m.reply(`🚪 You left the game.\n🏆 ${opponent.split("@")[0]} wins by default!`);
@@ -108,19 +103,18 @@ module.exports = async (context) => {
     if (!player.awaitingAnswer) return await m.reply("❌ No question has been asked.");
 
     const userAnswer = args.join(" ").toLowerCase().trim();
-    session.expectingDirectAnswer = false; 
-    return await processAnswer(userAnswer, context);
+    return await processAnswer(userAnswer, senderId, groupId, context);
 };
 
-
-async function processAnswer(userAnswer, context) {
-    const { client, m, groupSender } = context;
-    const groupId = m.chat;
-    const senderId = groupSender;
+async function processAnswer(userAnswer, senderId, groupId, context) {
+    const { client, m } = context;
     const session = sessions[groupId];
     const player = session.players[senderId];
 
+    if (!player || !player.awaitingAnswer) return;
+
     clearTimeout(session.timeoutRef);
+    session.eventListenerActive = false; 
 
     const correct = countries[player.current].capital.toLowerCase();
 
@@ -144,9 +138,9 @@ async function processAnswer(userAnswer, context) {
             s1 === s2 ? "🤝 It's a tie!" :
             s1 > s2 ? `🏆 Winner: ${p1.split("@")[0]}` :
                       `🏆 Winner: ${p2.split("@")[0]}`;
-        await m.reply(
-            `🏁 Game Over!\n\nScores:\n- ${p1.split("@")[0]}: ${s1}/10\n- ${p2.split("@")[0]}: ${s2}/10\n\n${winner}`
-        );
+        await client.sendMessage(groupId, {
+            text: `🏁 Game Over!\n\nScores:\n- ${p1.split("@")[0]}: ${s1}/5\n- ${p2.split("@")[0]}: ${s2}/5\n\n${winner}`
+        });
         delete sessions[groupId];
         return;
     }
@@ -169,19 +163,59 @@ async function askQuestion(groupId, playerId, context) {
     player.current = index;
     player.asked.push(index);
     player.awaitingAnswer = true;
-    session.expectingDirectAnswer = true; 
 
     const country = countries[index].country;
 
-    await client.sendMessage(groupId, {
-        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply in 1minute: ${context.prefix}gcapital <answer> OR just type your answer!`
+   
+    const questionMessage = await client.sendMessage(groupId, {
+        text: `🌍 ${playerId.split("@")[0]}, what is the capital of *${country}*?\n📝 Reply to this message with your answer OR use: ${context.prefix}gcapital <answer>`
     });
+
+    session.questionMessageId = questionMessage.key.id;
+    session.eventListenerActive = true;
+
+   
+    const eventHandler = async (update) => {
+        if (!session.eventListenerActive) return;
+
+        const messageContent = update.messages[0];
+        if (!messageContent.message) return;
+
+        const responseText = messageContent.message.conversation || 
+                           messageContent.message.extendedTextMessage?.text;
+        const chatId = messageContent.key.remoteJid;
+        const responderId = messageContent.key.participant || messageContent.key.remoteJid;
+
+        
+        const isReplyToQuestion = messageContent.message.extendedTextMessage?.contextInfo?.stanzaId === session.questionMessageId;
+
+        if (isReplyToQuestion && chatId === groupId && responderId === playerId) {
+          
+            client.ev.off("messages.upsert", eventHandler);
+            session.eventListenerActive = false;
+
+            
+            await client.sendMessage(chatId, {
+                react: { text: '🤖', key: messageContent.key }
+            });
+
+          
+            const userAnswer = responseText.toLowerCase().trim();
+            return await processAnswer(userAnswer, playerId, groupId, context);
+        }
+    };
+
+    client.ev.on("messages.upsert", eventHandler);
 
     session.timeoutRef = setTimeout(async () => {
         if (!player.awaitingAnswer) return;
+        
+        
+        client.ev.off("messages.upsert", eventHandler);
+        session.eventListenerActive = false;
+        
         player.awaitingAnswer = false;
         player.questionIndex++;
-        session.expectingDirectAnswer = false; 
         await client.sendMessage(groupId, {
             text: `⏱️ Time's up for ${playerId.split("@")[0]}!`
         });
