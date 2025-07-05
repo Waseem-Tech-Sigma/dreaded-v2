@@ -1,42 +1,39 @@
 module.exports = async (context) => {
-    const { client, m, uploadtoimgur } = context;
- const fs = require("fs");
-const path = require('path');
+  const { client, m } = context;
+  const fs = require('fs');
+  const axios = require('axios');
+  const FormData = require('form-data');
 
-const util = require("util");
+  const q = m.quoted ? m.quoted : m;
+  const mime = (q.msg || q).mimetype || '';
 
-let q = m.quoted ? m.quoted : m
-let mime = (q.msg || q).mimetype || ''
+  if (!mime) return m.reply('Quote a file (image, document, etc) to upload using *.gofile*');
 
-if (!mime) return m.reply('Quote an image or video')
+  const mediaBuffer = await q.download();
+  if (mediaBuffer.length > 100 * 1024 * 1024) return m.reply('File is too large.');
 
-let mediaBuffer = await q.download()
+  const filePath = await client.downloadAndSaveMediaMessage(q);
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath));
 
-  if (mediaBuffer.length > 10 * 1024 * 1024) return m.reply('Media is too large.')
+  m.reply('Uploading to gofile.io, please wait...');
 
+  try {
+    const res = await axios.post('https://store1.gofile.io/uploadFile', form, {
+      headers: form.getHeaders()
+    });
 
+    fs.unlinkSync(filePath);
 
-
-let isTele = /image\/(png|jpe?g|gif)|video\/mp4/.test(mime)
-
-
-if (isTele) {
-
-let fta2 = await client.downloadAndSaveMediaMessage(q)
-
-    let link = await uploadtoimgur(fta2)
-
-    const fileSizeMB = (mediaBuffer.length / (1024 * 1024)).toFixed(2)
-
-    m.reply(`Media Link:-\n\n${link}`)
-  } else {
-    m.reply(`Error occured...`)
+    if (res.data.status === 'ok') {
+      const link = res.data.data.downloadPage;
+      const fileName = res.data.data.fileName;
+      m.reply(`Upload Successful!\n\nFile: ${fileName}\nLink: ${link}`);
+    } else {
+      m.reply('Failed to upload to gofile.io.');
+    }
+  } catch (err) {
+    console.error(err);
+    m.reply('Upload error:\n' + err.message);
   }
-              
-      
-          
-                
-
-
-            }
-
+};
