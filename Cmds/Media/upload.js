@@ -3,44 +3,97 @@ module.exports = async (context) => {
   const fs = require('fs');
   const axios = require('axios');
   const FormData = require('form-data');
+  const path = require('path');
 
   const q = m.quoted ? m.quoted : m;
   const mime = (q.msg || q).mimetype || '';
 
-  if (!mime) return m.reply('Quote a file (image, document, etc) to upload using *.gofile*');
+  if (!mime) return m.reply('❌ Reply to a media file to upload.');
 
   const mediaBuffer = await q.download();
-  if (mediaBuffer.length > 100 * 1024 * 1024) return m.reply('File is too large.');
+  if (mediaBuffer.length > 100 * 1024 * 1024) return m.reply('❌ File too large (limit 100 MB).');
 
-  const filePath = await client.downloadAndSaveMediaMessage(q);
-  const form = new FormData();
-  form.append('file', fs.createReadStream(filePath));
+  const tempFile = path.join(__dirname, `upload_${Date.now()}`);
+  fs.writeFileSync(tempFile, mediaBuffer);
 
-  m.reply('Uploading to gofile.io, please wait...');
+  m.reply('⏳ Uploading file, please wait...');
 
-  try {
-    const res = await axios.post('https://store1.gofile.io/uploadFile', form, {
-      headers: form.getHeaders()
-    });
-
-    fs.unlinkSync(filePath);
-
-    if (res.data.status === 'ok') {
-      const pageLink = res.data.data.downloadPage;
-      const fileId = Object.keys(res.data.data.files)[0];
-      const directLink = res.data.data.files[fileId].link;
-
-      let mediaType = 'Media';
-      if (mime.startsWith('image/')) mediaType = 'Image';
-      else if (mime.startsWith('video/')) mediaType = 'Video';
-      else if (mime.startsWith('application/')) mediaType = 'Document';
-
-      m.reply(`✅ ${mediaType} uploaded successfully!\n\n🌐 Page: ${pageLink}\n📥 Direct: ${directLink}`);
-    } else {
-      m.reply('Failed to upload to gofile.io.');
+  const providers = [
+    async () => {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(tempFile));
+      const res = await axios.post('https://pixeldrain.com/api/file/anonymous', form, {
+        headers: form.getHeaders()
+      });
+      const id = res.data.id;
+      return {
+        name: 'Pixeldrain',
+        page: `https://pixeldrain.com/u/${id}`,
+        direct: `https://pixeldrain.com/api/file/${id}`
+      };
+    },
+    async () => {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(tempFile));
+      const res = await axios.post('https://file.io/', form, {
+        headers: form.getHeaders()
+      });
+      if (!res.data.success) throw new Error('File.io failed');
+      return {
+        name: 'File.io',
+        page: res.data.link,
+        direct: res.data.link
+      };
+    },
+    async () => {
+      const fileName = `upload_${Date.now()}.bin`;
+      const res = await axios.put(`https://transfer.sh/${fileName}`, fs.createReadStream(tempFile), {
+        headers: { 'Content-Type': 'application/octet-stream' }
+      });
+      return {
+        name: 'Transfer.sh',
+        page: res.data,
+        direct: res.data
+      };
+    },
+    async () => {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(tempFile));
+      const res = await axios.post('https://uguu.se/upload.php', form, {
+        headers: form.getHeaders()
+      });
+      if (!res.data.files || res.data.files.length === 0) throw new Error('Uguu failed');
+      return {
+        name: 'Uguu.se',
+        page: res.data.files[0].url,
+        direct: res.data.files[0].url
+      };
+    },
+    async () => {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(tempFile));
+      const res = await axios.post('https://api.bayfiles.com/upload', form, {
+        headers: form.getHeaders()
+      });
+      const fileData = res.data.data.file;
+      return {
+        name: 'Bayfiles',
+        page: fileData.url.short,
+        direct: fileData.url.full
+      };
     }
-  } catch (err) {
-    console.error(err);
-    m.reply('Upload error:\n' + err.message);
+  ];
+
+  for (let provider of providers) {
+    try {
+      const result = await provider();
+      fs.unlinkSync(tempFile);
+      return m.reply(`✅ Uploaded to ${result.name}!\n\n🌐 Page: ${result.page}\n📥 Direct: ${result.direct}`);
+    } catch (err) {
+      console.error(`[Uploader] ${provider.name || 'Provider'} failed:`, err.message);
+    }
   }
+
+  fs.unlinkSync(tempFile);
+  m.reply('❌ All upload providers failed. Please try again later.');
 };
