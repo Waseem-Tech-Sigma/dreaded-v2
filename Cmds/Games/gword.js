@@ -1,10 +1,9 @@
 const fs = require("fs");
-const wordListPath = require("word-list/words.txt"); 
+const wordListPath = require.resolve("word-list/word-list.txt");
 const words = fs.readFileSync(wordListPath, "utf-8")
-    .split("\n")
-    .map(w => w.trim().toLowerCase())
-    .filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
-
+  .split("\n")
+  .map(w => w.trim().toLowerCase())
+  .filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
 const sessions = {}; 
 
 function pickRandomWord() {
