@@ -2,8 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 
-const baseDir = path.dirname(require.resolve("word-list/package.json"));
-const wordListPath = path.join(baseDir, "words.txt");
+const wordListPath = path.join(__dirname, "node_modules", "word-list", "words.txt");
 
 const words = fs.readFileSync(wordListPath, "utf-8")
   .split("\n")
