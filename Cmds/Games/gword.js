@@ -1,9 +1,15 @@
 const fs = require("fs");
-const wordListPath = require.resolve("word-list/words.txt");
+const path = require("path");
+
+
+const baseDir = path.dirname(require.resolve("word-list/package.json"));
+const wordListPath = path.join(baseDir, "words.txt");
+
 const words = fs.readFileSync(wordListPath, "utf-8")
   .split("\n")
   .map(w => w.trim().toLowerCase())
   .filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
+
 const sessions = {}; 
 
 function pickRandomWord() {
