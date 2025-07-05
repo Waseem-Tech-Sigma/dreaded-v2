@@ -28,9 +28,13 @@ module.exports = async (context) => {
     if (res.data.status === 'ok') {
       const link = res.data.data.downloadPage;
       const directLink = link.replace('/d/', '/download/');
-      const fileName = res.data.data.fileName;
 
-      m.reply(`Upload Successful!\n\nFile: ${fileName}\n\n🌐 Page: ${link}\n📥 Direct: ${directLink}`);
+      let mediaType = 'Media';
+      if (mime.startsWith('image/')) mediaType = 'Image';
+      else if (mime.startsWith('video/')) mediaType = 'Video';
+      else if (mime.startsWith('application/')) mediaType = 'Document';
+
+      m.reply(`✅ ${mediaType} uploaded successfully!\n\n📥 Media Link: ${directLink}`);
     } else {
       m.reply('Failed to upload to gofile.io.');
     }
