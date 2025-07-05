@@ -22,213 +22,267 @@ function pickWord() {
 module.exports = async (context) => {
     const { client, m, groupSender, prefix } = context;
     const groupId = m.chat;
-    const senderLid = m.sender;
-    const senderJid = groupSender;
+    const senderId = m.sender;
+    const displayId = groupSender;
     const text = m.text.trim();
     const args = text.split(" ").slice(1);
 
     if (!sessions[groupId]) {
         sessions[groupId] = {
-            players: {},      
-            scores: {},       
+            players: {},
             started: false,
             finished: false,
-            questionId: null,
-            answer: null,
+            currentWord: null,
+            currentClue: null,
             round: 0,
-            listenerAttached: false,
-            timeoutRef: null
+            timeoutRef: null,
+            questionMessageId: null,
+            eventListenerActive: false,
+            _eventHandler: null
         };
     }
 
     const session = sessions[groupId];
 
-    const sub = args[0]?.toLowerCase();
-
-    if (!sub) {
+    if (args.length === 0) {
         return await client.sendMessage(groupId, {
-            text: `🔤 *Word Guessing Game*
-
-👥 2 players compete to guess a word based on a clue.
-
-📘 *Commands:*
-• ${prefix}gword join — join game
-• ${prefix}gword leave — leave game
-• ${prefix}gword scores — view scores
-• ${prefix}gword start — start game (after 2 joined)`
+            text:
+                `🔤 *Word Guessing Game*\n\n` +
+                `2 players required. First to answer wins the point.\n\n` +
+                `📘 *Usage:*\n` +
+                `• ${prefix}gword join — join game\n` +
+                `• ${prefix}gword leave — leave game\n` +
+                `• ${prefix}gword players — view players\n` +
+                `• ${prefix}gword scores — view scores\n` +
+                `• Reply to question messages with your guess!`
         }, { quoted: m });
     }
 
+    const sub = args[0].toLowerCase();
+
     if (sub === "join") {
-        if (session.started) {
+        if (session.players[senderId]) {
             return await client.sendMessage(groupId, {
-                text: `🚫 Game already in progress.`,
-                mentions: [senderJid]
+                text: `🕹️ You've already joined.`
             }, { quoted: m });
         }
-        if (session.players[senderLid]) {
-            return await client.sendMessage(groupId, {
-                text: `🕹️ You've already joined.`,
-                mentions: [senderJid]
-            }, { quoted: m });
-        }
+
         if (Object.keys(session.players).length >= 2) {
             return await client.sendMessage(groupId, {
-                text: `❌ 2 players already joined.`,
-                mentions: [senderJid]
+                text: `❌ 2 players already joined.`
             }, { quoted: m });
         }
 
-        session.players[senderLid] = senderJid;
-        session.scores[senderLid] = 0;
+        session.players[senderId] = {
+            display: displayId,
+            score: 0
+        };
 
-        const mentions = Object.values(session.players);
-        return await client.sendMessage(groupId, {
-            text: `✅ ${mentions.length === 1 ? "You joined.\n⏳ Waiting for opponent..." : `@${senderJid.split("@")[0]} joined.\n\n🎮 Game ready!\nType *${prefix}gword start* to begin.`}`,
-            mentions
+        if (Object.keys(session.players).length === 1) {
+            return await client.sendMessage(groupId, {
+                text: `✅ You joined.\n⏳ Waiting for opponent...`
+            }, { quoted: m });
+        }
+
+        session.started = true;
+        const players = Object.values(session.players);
+
+        const introMessage = await client.sendMessage(groupId, {
+            text: `✅ @${displayId.split("@")[0]} joined.\n\n🎮 Game starting!\n\n⚡ First to answer gets the point!\nReply to question messages with your guess!`,
+            mentions: [displayId]
         }, { quoted: m });
+
+        return await askQuestion(groupId, { ...context, m: introMessage });
     }
 
     if (sub === "leave") {
-        if (!session.players[senderLid]) {
+        if (!session.players[senderId]) {
             return await client.sendMessage(groupId, {
-                text: `🙅 You're not in this game.`,
-                mentions: [senderJid]
+                text: `🚫 You're not in this game.`
             }, { quoted: m });
         }
+
+        const opponent = Object.keys(session.players).find(p => p !== senderId);
         clearTimeout(session.timeoutRef);
+        session.eventListenerActive = false;
+
+        if (session._eventHandler) {
+            client.ev.off("messages.upsert", session._eventHandler);
+        }
+
         delete sessions[groupId];
+
+        if (opponent) {
+            return await client.sendMessage(groupId, {
+                text: `🚪 You left the game.\n🏆 @${session.players[opponent].display.split("@")[0]} wins by default!`,
+                mentions: [session.players[opponent].display]
+            }, { quoted: m });
+        } else {
+            return await client.sendMessage(groupId, {
+                text: `🚪 You left the game.`
+            }, { quoted: m });
+        }
+    }
+
+    if (sub === "players") {
+        const playerList = Object.values(session.players);
+        if (playerList.length === 0) {
+            return await client.sendMessage(groupId, {
+                text: `No one has joined.`
+            }, { quoted: m });
+        }
+
+        const textList = playerList.map(p => `- @${p.display.split("@")[0]}`).join("\n");
         return await client.sendMessage(groupId, {
-            text: `🚪 @${senderJid.split("@")[0]} left. Game cancelled.`,
-            mentions: [senderJid]
+            text: `👥 Players:\n${textList}`,
+            mentions: playerList.map(p => p.display)
         }, { quoted: m });
     }
 
     if (sub === "scores") {
         if (!session.started) {
             return await client.sendMessage(groupId, {
-                text: `ℹ️ Game hasn't started yet.`,
-                mentions: [senderJid]
+                text: `Game hasn't started yet.`
             }, { quoted: m });
         }
 
-        const scoreText = Object.entries(session.scores).map(([lid, score]) => {
-            const name = session.players[lid].split("@")[0];
-            return `@${name}: ${score}`;
-        }).join("\n");
+        const scoresText = Object.values(session.players).map(
+            p => `- @${p.display.split("@")[0]}: ${p.score}/10`
+        ).join("\n");
 
         return await client.sendMessage(groupId, {
-            text: `📊 Scores:\n${scoreText}`,
-            mentions: Object.values(session.players)
+            text: `📊 Scores:\n${scoresText}`,
+            mentions: Object.values(session.players).map(p => p.display)
         }, { quoted: m });
     }
 
-    if (sub === "start") {
-        if (session.started) {
-            return await client.sendMessage(groupId, {
-                text: `⏳ Game already running.`,
-                mentions: [senderJid]
-            }, { quoted: m });
-        }
-
-        const lids = Object.keys(session.players);
-        if (lids.length < 2) {
-            return await client.sendMessage(groupId, {
-                text: `❌ 2 players required.`,
-                mentions: [senderJid]
-            }, { quoted: m });
-        }
-
-        session.started = true;
-        await client.sendMessage(groupId, {
-            text: `🎮 Game started!\nReply to each word clue to score.\n⏱️ 40s per round, first to answer wins the point.`,
-            mentions: Object.values(session.players)
+    if (!session.started || session.finished) {
+        return await client.sendMessage(groupId, {
+            text: `❌ Please reply to the question message with your guess!`
         }, { quoted: m });
-
-        askWord(groupId, context);
     }
-
-    if (!session.started || session.finished) return;
 };
 
-async function askWord(groupId, context) {
-    const { client } = context;
+async function askQuestion(groupId, context) {
+    const { client, m } = context;
     const session = sessions[groupId];
-    if (!session) return;
+
+    if (!session || session.finished) return;
 
     const { word, clue } = pickWord();
-    session.answer = word;
+    session.currentWord = word;
+    session.currentClue = clue;
     session.round++;
 
-    const msg = await client.sendMessage(groupId, {
-        text: `🔤 Round ${session.round}/10\n${clue}`,
-        mentions: Object.values(session.players)
-    });
-    session.questionId = msg.key.id;
+    const questionMessage = await client.sendMessage(groupId, {
+        text: `🔤 Round ${session.round}/10\n${clue}\n📝 Reply to this message with your guess!`,
+        mentions: Object.values(session.players).map(p => p.display)
+    }, { quoted: m });
 
-    if (!session.listenerAttached) {
-        client.ev.on("messages.upsert", async (update) => {
-            const message = update.messages?.[0];
-            if (!message?.message || !sessions[groupId]?.started) return;
-            const session = sessions[groupId];
-            const text = message.message.conversation || message.message.extendedTextMessage?.text;
-            const lid = message.key.participant || message.key.remoteJid;
-            const chat = message.key.remoteJid;
-            const replyTo = message.message?.extendedTextMessage?.contextInfo?.stanzaId;
+    session.questionMessageId = questionMessage.key.id;
+    session.eventListenerActive = true;
 
-            if (chat !== groupId) return;
-            if (!session.players[lid]) return;
-            if (replyTo !== session.questionId) return;
-
-            if (text?.toLowerCase().trim() === session.answer) {
-                clearTimeout(session.timeoutRef);
-                session.scores[lid]++;
-                await client.sendMessage(groupId, {
-                    text: `✅ @${session.players[lid].split("@")[0]} got it! The word was *${session.answer}*.`,
-                    mentions: [session.players[lid]]
-                }, { quoted: message });
-
-                if (session.round >= 10) {
-                    session.finished = true;
-                    const results = Object.entries(session.scores).map(([lid, score]) => {
-                        const jid = session.players[lid];
-                        return `@${jid.split("@")[0]}: ${score}`;
-                    }).join("\n");
-
-                    await client.sendMessage(groupId, {
-                        text: `🏁 Game Over!\n\n📊 Final Scores:\n${results}`,
-                        mentions: Object.values(session.players)
-                    });
-
-                    delete sessions[groupId];
-                } else {
-                    askWord(groupId, context);
-                }
-            }
-        });
-        session.listenerAttached = true;
+    if (session._eventHandler) {
+        client.ev.off("messages.upsert", session._eventHandler);
     }
 
+    const eventHandler = async (update) => {
+        if (!update || !update.messages || !Array.isArray(update.messages)) return;
+        if (!session.eventListenerActive) return;
+
+        const messageContent = update.messages[0];
+        if (!messageContent.message) return;
+
+        const message = messageContent.message;
+        const chatId = messageContent.key.remoteJid;
+        const responderId = messageContent.key.participant || messageContent.key.remoteJid;
+        const contextInfo = message.extendedTextMessage?.contextInfo;
+        const stanzaId = contextInfo?.stanzaId;
+
+        const isReplyToQuestion = stanzaId === session.questionMessageId;
+
+        if (isReplyToQuestion && chatId === groupId && session.players[responderId]) {
+            client.ev.off("messages.upsert", eventHandler);
+            session.eventListenerActive = false;
+
+            await client.sendMessage(chatId, {
+                react: { text: '🤖', key: messageContent.key }
+            });
+
+            const userAnswer = (message.conversation || message.extendedTextMessage?.text || "").toLowerCase().trim();
+            return await processAnswer(userAnswer, responderId, groupId, context);
+        }
+    };
+
+    session._eventHandler = eventHandler;
+    client.ev.on("messages.upsert", session._eventHandler);
+
     session.timeoutRef = setTimeout(async () => {
+        if (!session.eventListenerActive) return;
+
+        client.ev.off("messages.upsert", session._eventHandler);
+        session.eventListenerActive = false;
+
         await client.sendMessage(groupId, {
-            text: `⏱️ Time’s up! The word was *${session.answer}*.`
+            text: `⏱️ Time's up! The word was *${session.currentWord}*.`
         });
 
         if (session.round >= 10) {
-            session.finished = true;
-            const results = Object.entries(session.scores).map(([lid, score]) => {
-                const jid = session.players[lid];
-                return `@${jid.split("@")[0]}: ${score}`;
-            }).join("\n");
-
-            await client.sendMessage(groupId, {
-                text: `🏁 Game Over!\n\n📊 Final Scores:\n${results}`,
-                mentions: Object.values(session.players)
-            });
-
-            delete sessions[groupId];
-        } else {
-            askWord(groupId, context);
+            await endGame(client, groupId, session);
+            return;
         }
+
+        return await askQuestion(groupId, context);
     }, 40000);
+}
+
+async function processAnswer(userAnswer, senderId, groupId, context) {
+    const { client, m } = context;
+    const session = sessions[groupId];
+    const player = session.players[senderId];
+
+    if (!player || !session.eventListenerActive) return;
+
+    clearTimeout(session.timeoutRef);
+    session.eventListenerActive = false;
+
+    if (userAnswer === session.currentWord) {
+        player.score++;
+        await client.sendMessage(groupId, {
+            text: `✅ @${player.display.split("@")[0]} got it! The word was *${session.currentWord}*.`,
+            mentions: [player.display]
+        }, { quoted: m });
+    } else {
+        await client.sendMessage(groupId, {
+            text: `❌ Incorrect. The word was *${session.currentWord}*.`
+        }, { quoted: m });
+    }
+
+    if (session.round >= 10) {
+        await endGame(client, groupId, session);
+        return;
+    }
+
+    return await askQuestion(groupId, context);
+}
+
+async function endGame(client, groupId, session) {
+    session.finished = true;
+    const players = Object.values(session.players);
+    const [p1, p2] = players;
+    const s1 = p1.score;
+    const s2 = p2.score;
+    const d1 = p1.display;
+    const d2 = p2.display;
+
+    const winner = s1 === s2 ? "🤝 It's a tie!" :
+                   s1 > s2 ? `🏆 Winner: @${d1.split("@")[0]}` :
+                             `🏆 Winner: @${d2.split("@")[0]}`;
+
+    await client.sendMessage(groupId, {
+        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/10\n\n- @${d2.split("@")[0]}: ${s2}/10\n\n${winner} 🎉`,
+        mentions: [d1, d2]
+    });
+
+    delete sessions[groupId];
 }
