@@ -13,10 +13,10 @@ function isValidWord(word, criteria) {
    
     if (!wordPool.includes(word)) return false;
     
-   
+  
     if (word.length !== criteria.length) return false;
     
-   
+    
     if (criteria.end && !word.endsWith(criteria.end)) return false;
     
     return true;
@@ -263,7 +263,7 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
     clearTimeout(session.timeoutRef);
     session.eventListenerActive = false;
 
-    // Check if answer is valid based on criteria
+    
     const isValidAnswer = isValidWord(userAnswer, session.currentCriteria);
 
     if (isValidAnswer) {
