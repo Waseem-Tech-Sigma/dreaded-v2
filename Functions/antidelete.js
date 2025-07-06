@@ -78,7 +78,7 @@ async function handleMessageRevocation(client, revocationMessage, botNumber) {
         externalAdReply: {
           title: notificationText,
           body: `Deleted by: ${deletedByFormatted}`,
-          thumbnailUrl: "https://files.catbox.moe/7f98vp.jpg",
+          thumbnailUrl: "https://files.catbox.moe/z34m2h.jpg",
           sourceUrl: '',
           mediaType: 1,
           renderLargerThumbnail: false
