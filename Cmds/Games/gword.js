@@ -191,7 +191,7 @@ async function askQuestion(groupId, context) {
     session.currentCriteria = criteria;
     session.round++;
 
-    console.log(`[${groupId}] ❓ Asking round ${session.round}: word="${word}" clue="${clue}"`);
+    console.log(`[${groupId}] ❓ Round ${session.round}: "${clue}" — answer: "${word}"`);
 
     const questionMessage = await client.sendMessage(groupId, {
         text: `🔤 Round ${session.round}/10\n${clue}\n📝 Reply to this message with your guess!`,
@@ -201,6 +201,7 @@ async function askQuestion(groupId, context) {
     session.questionMessageId = questionMessage.key.id;
     session.eventListenerActive = true;
 
+    // Remove any old listeners
     if (session._eventHandler) {
         client.ev.off("messages.upsert", session._eventHandler);
     }
@@ -219,42 +220,64 @@ async function askQuestion(groupId, context) {
             const isReplyToQuestion = stanzaId === session.questionMessageId;
             const isFromPlayer = session.players[responderId];
 
-            if (isReplyToQuestion && chatId === groupId && isFromPlayer) {
-                console.log(`[${groupId}] 📥 Reply from ${responderId}`);
+            if (!isReplyToQuestion || chatId !== groupId || !isFromPlayer) return;
 
-                client.ev.off("messages.upsert", eventHandler);
+            const userAnswer = (
+                msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                ""
+            ).toLowerCase().trim();
+
+            console.log(`[${groupId}] 🧠 @${responderId.split("@")[0]} guessed: "${userAnswer}"`);
+
+            
+            await client.sendMessage(chatId, {
+                react: { text: '🤖', key: msg.key }
+            });
+
+            const isCorrect = isValidWord(userAnswer, session.currentCriteria);
+
+            if (isCorrect) {
+                console.log(`[${groupId}] ✅ Correct answer by ${responderId}`);
                 session.eventListenerActive = false;
+                clearTimeout(session.timeoutRef);
+                client.ev.off("messages.upsert", session._eventHandler);
+
+                session.players[responderId].score++;
 
                 await client.sendMessage(chatId, {
-                    react: { text: '🤖', key: msg.key }
-                });
+                    text: `✅ @${session.players[responderId].display.split("@")[0]} got it! "${userAnswer}" is correct!`,
+                    mentions: [session.players[responderId].display]
+                }, { quoted: msg });
 
-                const answerText = (
-                    msg.message?.conversation ||
-                    msg.message?.extendedTextMessage?.text ||
-                    ""
-                ).toLowerCase().trim();
+                if (session.round >= 10) {
+                    return await endGame(client, groupId, session);
+                }
 
-                console.log(`[${groupId}] 🧠 ${responderId} answered: "${answerText}"`);
-
-             
-                return await processAnswer(answerText, responderId, groupId, { ...context, m: msg });
+                return await askQuestion(groupId, { ...context, m: msg });
+            } else {
+                console.log(`[${groupId}] ❌ Wrong answer by ${responderId}`);
+                await client.sendMessage(chatId, {
+                    text: `❌ "${userAnswer}" is incorrect. Try again.`,
+                    mentions: [session.players[responderId].display]
+                }, { quoted: msg });
             }
+
         } catch (err) {
-            console.error(`[${groupId}] ❌ Error in event handler:`, err);
+            console.error(`[${groupId}] ❌ Error in message listener:`, err);
         }
     };
 
     session._eventHandler = eventHandler;
-    client.ev.on("messages.upsert", session._eventHandler);
+    client.ev.on("messages.upsert", eventHandler);
 
     session.timeoutRef = setTimeout(async () => {
         if (!session.eventListenerActive) return;
 
-        console.log(`[${groupId}] ⏱️ Round ${session.round} timed out.`);
-
-        client.ev.off("messages.upsert", session._eventHandler);
         session.eventListenerActive = false;
+        client.ev.off("messages.upsert", session._eventHandler);
+
+        console.log(`[${groupId}] ⏱️ Time's up. Correct word: ${session.currentWord}`);
 
         await client.sendMessage(groupId, {
             text: `⏱️ Time's up! An example answer was *${session.currentWord}*.`
@@ -266,43 +289,6 @@ async function askQuestion(groupId, context) {
             await askQuestion(groupId, context);
         }
     }, 40000);
-}
-
-async function processAnswer(userAnswer, senderId, groupId, context) {
-    const { client, m } = context;
-    const session = sessions[groupId];
-    const player = session.players[senderId];
-
-    if (!player || !session.eventListenerActive) {
-        console.log(`[${groupId}] ❌ Answer ignored. Player not valid or event not active.`);
-        return;
-    }
-
-    clearTimeout(session.timeoutRef);
-    session.eventListenerActive = false;
-
-    const isValidAnswer = isValidWord(userAnswer, session.currentCriteria);
-
-    if (isValidAnswer) {
-        player.score++;
-        console.log(`[${groupId}] ✅ ${senderId} got it right: "${userAnswer}"`);
-        await client.sendMessage(groupId, {
-            text: `✅ @${player.display.split("@")[0]} got it! "${userAnswer}" is correct!`,
-            mentions: [player.display]
-        }, { quoted: m });
-    } else {
-        console.log(`[${groupId}] ❌ ${senderId} answered incorrectly: "${userAnswer}"`);
-        await client.sendMessage(groupId, {
-            text: `❌ Incorrect. "${userAnswer}" doesn't match the criteria.\nExample: *${session.currentWord}*`
-        }, { quoted: m });
-    }
-
-    if (session.round >= 10) {
-        console.log(`[${groupId}] 🏁 Game finished.`);
-        await endGame(client, groupId, session);
-    } else {
-        await askQuestion(groupId, context);
-    }
 }
 
 async function endGame(client, groupId, session) {
