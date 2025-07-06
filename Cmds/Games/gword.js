@@ -9,6 +9,19 @@ const wordPool = fs.readFileSync(wordListPath, "utf-8")
 
 const sessions = {};
 
+function isValidWord(word, criteria) {
+   
+    if (!wordPool.includes(word)) return false;
+    
+   
+    if (word.length !== criteria.length) return false;
+    
+   
+    if (criteria.end && !word.endsWith(criteria.end)) return false;
+    
+    return true;
+}
+
 function pickWord() {
     const length = Math.floor(Math.random() * 4) + 3; 
     const end = Math.random() < 0.5 ? null : String.fromCharCode(97 + Math.floor(Math.random() * 26));
@@ -16,7 +29,10 @@ function pickWord() {
     if (end) pool = pool.filter(w => w.endsWith(end));
     if (pool.length === 0) return pickWord();
     const word = pool[Math.floor(Math.random() * pool.length)];
-    return { word, clue: `🧠 Guess a ${length}-letter word${end ? ` ending with "${end}"` : ""}!` };
+    
+    
+    const criteria = { length, end };
+    return { word, clue: `🧠 Guess a ${length}-letter word${end ? ` ending with "${end}"` : ""}!`, criteria };
 }
 
 module.exports = async (context) => {
@@ -33,7 +49,7 @@ module.exports = async (context) => {
             started: false,
             finished: false,
             currentWord: null,
-            currentClue: null,
+            currentCriteria: null,
             round: 0,
             timeoutRef: null,
             questionMessageId: null,
@@ -169,9 +185,10 @@ async function askQuestion(groupId, context) {
 
     if (!session || session.finished) return;
 
-    const { word, clue } = pickWord();
+    const { word, clue, criteria } = pickWord();
     session.currentWord = word;
     session.currentClue = clue;
+    session.currentCriteria = criteria;
     session.round++;
 
     const questionMessage = await client.sendMessage(groupId, {
@@ -224,7 +241,7 @@ async function askQuestion(groupId, context) {
         session.eventListenerActive = false;
 
         await client.sendMessage(groupId, {
-            text: `⏱️ Time's up! The word was *${session.currentWord}*.`
+            text: `⏱️ Time's up! An example answer was *${session.currentWord}*.`
         });
 
         if (session.round >= 10) {
@@ -246,15 +263,18 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
     clearTimeout(session.timeoutRef);
     session.eventListenerActive = false;
 
-    if (userAnswer === session.currentWord) {
+    // Check if answer is valid based on criteria
+    const isValidAnswer = isValidWord(userAnswer, session.currentCriteria);
+
+    if (isValidAnswer) {
         player.score++;
         await client.sendMessage(groupId, {
-            text: `✅ @${player.display.split("@")[0]} got it! The word was *${session.currentWord}*.`,
+            text: `✅ @${player.display.split("@")[0]} got it! "${userAnswer}" is correct!`,
             mentions: [player.display]
         }, { quoted: m });
     } else {
         await client.sendMessage(groupId, {
-            text: `❌ Incorrect. The word was *${session.currentWord}*.`
+            text: `❌ Incorrect. "${userAnswer}" doesn't match the criteria. Example: *${session.currentWord}*.`
         }, { quoted: m });
     }
 
