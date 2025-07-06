@@ -55,7 +55,7 @@ async function handleMessageRevocation(client, revocationMessage, botNumber) {
   const deletedByFormatted = `@${deletedBy.split('@')[0]}`;
   const sentByFormatted = `@${sentBy.split('@')[0]}`;
 
-  let notificationText = `DREADED ANTIDELETE REPORT\n\n` +
+  let notificationText = `_ANTIDELETE_\n\n` +
     `Deleted by: ${deletedByFormatted}\n\n`;
 
   try {
