@@ -191,6 +191,8 @@ async function askQuestion(groupId, context) {
     session.currentCriteria = criteria;
     session.round++;
 
+    console.log(`[${groupId}] ❓ Asking round ${session.round}: word="${word}" clue="${clue}"`);
+
     const questionMessage = await client.sendMessage(groupId, {
         text: `🔤 Round ${session.round}/10\n${clue}\n📝 Reply to this message with your guess!`,
         mentions: Object.values(session.players).map(p => p.display)
@@ -204,30 +206,42 @@ async function askQuestion(groupId, context) {
     }
 
     const eventHandler = async (update) => {
-        if (!update || !update.messages || !Array.isArray(update.messages)) return;
-        if (!session.eventListenerActive) return;
+        try {
+            if (!update?.messages?.[0]) return;
+            if (!session.eventListenerActive) return;
 
-        const messageContent = update.messages[0];
-        if (!messageContent.message) return;
+            const msg = update.messages[0];
+            const chatId = msg.key.remoteJid;
+            const responderId = msg.key.participant || msg.key.remoteJid;
+            const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+            const stanzaId = contextInfo?.stanzaId;
 
-        const message = messageContent.message;
-        const chatId = messageContent.key.remoteJid;
-        const responderId = messageContent.key.participant || messageContent.key.remoteJid;
-        const contextInfo = message.extendedTextMessage?.contextInfo;
-        const stanzaId = contextInfo?.stanzaId;
+            const isReplyToQuestion = stanzaId === session.questionMessageId;
+            const isFromPlayer = session.players[responderId];
 
-        const isReplyToQuestion = stanzaId === session.questionMessageId;
+            if (isReplyToQuestion && chatId === groupId && isFromPlayer) {
+                console.log(`[${groupId}] 📥 Reply from ${responderId}`);
 
-        if (isReplyToQuestion && chatId === groupId && session.players[responderId]) {
-            client.ev.off("messages.upsert", eventHandler);
-            session.eventListenerActive = false;
+                client.ev.off("messages.upsert", eventHandler);
+                session.eventListenerActive = false;
 
-            await client.sendMessage(chatId, {
-                react: { text: '🤖', key: messageContent.key }
-            });
+                await client.sendMessage(chatId, {
+                    react: { text: '🤖', key: msg.key }
+                });
 
-            const userAnswer = (message.conversation || message.extendedTextMessage?.text || "").toLowerCase().trim();
-            return await processAnswer(userAnswer, responderId, groupId, context);
+                const answerText = (
+                    msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    ""
+                ).toLowerCase().trim();
+
+                console.log(`[${groupId}] 🧠 ${responderId} answered: "${answerText}"`);
+
+             
+                return await processAnswer(answerText, responderId, groupId, { ...context, m: msg });
+            }
+        } catch (err) {
+            console.error(`[${groupId}] ❌ Error in event handler:`, err);
         }
     };
 
@@ -236,6 +250,8 @@ async function askQuestion(groupId, context) {
 
     session.timeoutRef = setTimeout(async () => {
         if (!session.eventListenerActive) return;
+
+        console.log(`[${groupId}] ⏱️ Round ${session.round} timed out.`);
 
         client.ev.off("messages.upsert", session._eventHandler);
         session.eventListenerActive = false;
@@ -246,10 +262,9 @@ async function askQuestion(groupId, context) {
 
         if (session.round >= 10) {
             await endGame(client, groupId, session);
-            return;
+        } else {
+            await askQuestion(groupId, context);
         }
-
-        return await askQuestion(groupId, context);
     }, 40000);
 }
 
@@ -258,32 +273,36 @@ async function processAnswer(userAnswer, senderId, groupId, context) {
     const session = sessions[groupId];
     const player = session.players[senderId];
 
-    if (!player || !session.eventListenerActive) return;
+    if (!player || !session.eventListenerActive) {
+        console.log(`[${groupId}] ❌ Answer ignored. Player not valid or event not active.`);
+        return;
+    }
 
     clearTimeout(session.timeoutRef);
     session.eventListenerActive = false;
 
-    
     const isValidAnswer = isValidWord(userAnswer, session.currentCriteria);
 
     if (isValidAnswer) {
         player.score++;
+        console.log(`[${groupId}] ✅ ${senderId} got it right: "${userAnswer}"`);
         await client.sendMessage(groupId, {
             text: `✅ @${player.display.split("@")[0]} got it! "${userAnswer}" is correct!`,
             mentions: [player.display]
         }, { quoted: m });
     } else {
+        console.log(`[${groupId}] ❌ ${senderId} answered incorrectly: "${userAnswer}"`);
         await client.sendMessage(groupId, {
-            text: `❌ Incorrect. "${userAnswer}" doesn't match the criteria. Example: *${session.currentWord}*.`
+            text: `❌ Incorrect. "${userAnswer}" doesn't match the criteria.\nExample: *${session.currentWord}*`
         }, { quoted: m });
     }
 
     if (session.round >= 10) {
+        console.log(`[${groupId}] 🏁 Game finished.`);
         await endGame(client, groupId, session);
-        return;
+    } else {
+        await askQuestion(groupId, context);
     }
-
-    return await askQuestion(groupId, context);
 }
 
 async function endGame(client, groupId, session) {
