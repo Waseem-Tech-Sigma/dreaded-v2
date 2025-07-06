@@ -28,6 +28,7 @@ const handleDreaded = require("./dreaded");
 const  { handleIncomingMessage, handleMessageRevocation } = require('../Functions/antidelete');
 
 const { initializeClientUtils } = require('../Client/clientUtils'); 
+initializeClientUtils(client, store);
 
 const logger = pino({
     level: 'silent' 
@@ -189,36 +190,36 @@ client.ev.on("connection.update", async (update) => {
             const sender = mek.key.participant || mek.key.remoteJid;
             const Myself = await client.decodeJid(client.user.id);
 
+const context = await client.getGroupContext(mek, Myself);
+
+
             if (isGroup) {
-                const antilink = await getGroupSetting(mek.key.remoteJid, "antilink");
+  const antilink = await getGroupSetting(mek.key.remoteJid, "antilink");
 
-                if ((antilink === true || antilink === 'true') && messageContent.includes("https") && groupSender !== Myself) {
-                
-                   const groupAdmins = await client.getGroupAdmins(mek.key.remoteJid);
-                    const isAdmin = groupAdmins.includes(sender);
-                    const isBotAdmin = groupAdmins.includes(Myself);
+  if ((antilink === true || antilink === 'true') && messageContent.includes("https")) {
+    const context = await client.getGroupContext(mek, Myself);
+    const { isAdmin, isBotAdmin, groupSender } = context;
 
-                    if (!isBotAdmin) return;
-                    if (!isAdmin) {
-                        await client.sendMessage(mek.key.remoteJid, {
-                            text: `🚫 @${groupSender.split("@")[0]}, sending links is prohibited! You have been removed.`,
-                            contextInfo: { mentionedJid: [sender] }
-                        }, { quoted: mek });
+    if (!isBotAdmin) return;
+    if (!isAdmin) {
+      await client.sendMessage(mek.key.remoteJid, {
+        text: `🚫 @${groupSender.split("@")[0]}, sending links is prohibited! You have been removed.`,
+        contextInfo: { mentionedJid: [sender] }
+      }, { quoted: mek });
 
-                        await client.groupParticipantsUpdate(mek.key.remoteJid, [groupSender], "remove");
+      await client.groupParticipantsUpdate(mek.key.remoteJid, [groupSender], "remove");
 
-                        await client.sendMessage(mek.key.remoteJid, {
-                            delete: {
-                                remoteJid: mek.key.remoteJid,
-                                fromMe: false,
-                                id: mek.key.id,
-                                participant: groupSender
-                            }
-                        });
-                    }
-                    return;
-                }
-            }
+      await client.sendMessage(mek.key.remoteJid, {
+        delete: {
+          remoteJid: mek.key.remoteJid,
+          fromMe: false,
+          id: mek.key.id,
+          participant: groupSender
+        }
+      });
+    }
+  }
+}
 
             // autolike for statuses
 
