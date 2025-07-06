@@ -25,6 +25,7 @@ const NodeCache = require("node-cache");
 const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('../lib/exif');
 const { isUrl, generateMessageTag, getBuffer, getSizeMedia, fetchJson, await, sleep } = require('../lib/botFunctions');
 const handleDreaded = require("./dreaded");
+const antidel = require('../Functions/antidelete');
 
 const { initializeClientUtils } = require('../Client/clientUtils'); 
 
@@ -220,6 +221,15 @@ client.ev.on("connection.update", async (update) => {
             }
 
             // autolike for statuses
+
+
+  if (mek.message?.protocolMessage?.key) {
+const nickkk = await client.decodeJid(client.user.id);
+    await handleMessageRevocation(client, mek, nickkk); 
+  } else {
+    handleIncomingMessage(mek);
+  }
+
             
 
 if (autolike && mek.key && mek.key.remoteJid === "status@broadcast") {
