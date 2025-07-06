@@ -5,7 +5,7 @@ const wordListPath = path.resolve(__dirname, "../../node_modules/word-list/words
 const wordPool = fs.readFileSync(wordListPath, "utf-8")
     .split("\n")
     .map(w => w.trim().toLowerCase())
-    .filter(w => w.length >= 3 && w.length <= 6 && /^[a-z]+$/.test(w));
+    .filter(w => w.length >= 3 && w.length <= 10 && /^[a-z]+$/.test(w)); 
 
 const sessions = {};
 
@@ -22,18 +22,27 @@ function isValidWord(word, criteria) {
     return true;
 }
 
-function pickWord() {
-    const length = Math.floor(Math.random() * 4) + 3; 
+function pickWord(session) {
+    const length = Math.floor(Math.random() * 8) + 3; 
     const end = Math.random() < 0.5 ? null : String.fromCharCode(97 + Math.floor(Math.random() * 26));
-    let pool = wordPool.filter(w => w.length === length);
-    if (end) pool = pool.filter(w => w.endsWith(end));
-    if (pool.length === 0) return pickWord();
+
+    let pool = wordPool.filter(w =>
+        w.length === length &&
+        (!end || w.endsWith(end)) &&
+        !session.usedWords.has(w)
+    );
+
+    if (pool.length === 0) return pickWord(session); 
+
     const word = pool[Math.floor(Math.random() * pool.length)];
-    
-    
+    session.usedWords.add(word); 
+
     const criteria = { length, end };
     return { word, clue: `🧠 Guess a ${length}-letter word${end ? ` ending with "${end}"` : ""}!`, criteria };
 }
+    
+    
+    
 
 module.exports = async (context) => {
     const { client, m, groupSender, prefix } = context;
@@ -45,17 +54,18 @@ module.exports = async (context) => {
 
     if (!sessions[groupId]) {
         sessions[groupId] = {
-            players: {},
-            started: false,
-            finished: false,
-            currentWord: null,
-            currentCriteria: null,
-            round: 0,
-            timeoutRef: null,
-            questionMessageId: null,
-            eventListenerActive: false,
-            _eventHandler: null
-        };
+    players: {},
+    started: false,
+    finished: false,
+    currentWord: null,
+    currentCriteria: null,
+    round: 0,
+    timeoutRef: null,
+    questionMessageId: null,
+    eventListenerActive: false,
+    _eventHandler: null,
+    usedWords: new Set()
+};
     }
 
     const session = sessions[groupId];
@@ -130,7 +140,7 @@ module.exports = async (context) => {
 
         if (opponent) {
             return await client.sendMessage(groupId, {
-                text: `🚪 You left the game.\n🏆 @${session.players[opponent].display.split("@")[0]} wins by default!`,
+                text: `🚪 You left the game.\n🏆 @${session.players[opponent].display.split("@")[0]} has won...`,
                 mentions: [session.players[opponent].display]
             }, { quoted: m });
         } else {
@@ -185,7 +195,7 @@ async function askQuestion(groupId, context) {
 
     if (!session || session.finished) return;
 
-    const { word, clue, criteria } = pickWord();
+    const { word, clue, criteria } = pickWord(session);
     session.currentWord = word;
     session.currentClue = clue;
     session.currentCriteria = criteria;
@@ -201,7 +211,7 @@ async function askQuestion(groupId, context) {
     session.questionMessageId = questionMessage.key.id;
     session.eventListenerActive = true;
 
-    // Remove any old listeners
+    
     if (session._eventHandler) {
         client.ev.off("messages.upsert", session._eventHandler);
     }
@@ -235,15 +245,23 @@ async function askQuestion(groupId, context) {
                 react: { text: '🤖', key: msg.key }
             });
 
+            
+            if (session.usedWords.has(userAnswer)) {
+                return await client.sendMessage(chatId, {
+                    text: `⚠️ The word "${userAnswer}" has already been used. Try a new word!`,
+                    mentions: [session.players[responderId].display]
+                }, { quoted: msg });
+            }
+
             const isCorrect = isValidWord(userAnswer, session.currentCriteria);
 
             if (isCorrect) {
-                console.log(`[${groupId}] ✅ Correct answer by ${responderId}`);
                 session.eventListenerActive = false;
                 clearTimeout(session.timeoutRef);
                 client.ev.off("messages.upsert", session._eventHandler);
 
                 session.players[responderId].score++;
+                session.usedWords.add(userAnswer); 
 
                 await client.sendMessage(chatId, {
                     text: `✅ @${session.players[responderId].display.split("@")[0]} got it! "${userAnswer}" is correct!`,
@@ -256,7 +274,8 @@ async function askQuestion(groupId, context) {
 
                 return await askQuestion(groupId, { ...context, m: msg });
             } else {
-                console.log(`[${groupId}] ❌ Wrong answer by ${responderId}`);
+                session.usedWords.add(userAnswer); 
+
                 await client.sendMessage(chatId, {
                     text: `❌ "${userAnswer}" is incorrect. Try again.`,
                     mentions: [session.players[responderId].display]
