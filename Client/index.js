@@ -25,7 +25,7 @@ const NodeCache = require("node-cache");
 const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('../lib/exif');
 const { isUrl, generateMessageTag, getBuffer, getSizeMedia, fetchJson, await, sleep } = require('../lib/botFunctions');
 const handleDreaded = require("./dreaded");
-const antidel = require('../Functions/antidelete');
+const  { handleIncomingMessage, handleMessageRevocation } = require('../Functions/antidelete');
 
 const { initializeClientUtils } = require('../Client/clientUtils'); 
 
