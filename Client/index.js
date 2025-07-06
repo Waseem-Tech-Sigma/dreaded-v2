@@ -28,7 +28,7 @@ const handleDreaded = require("./dreaded");
 const  { handleIncomingMessage, handleMessageRevocation } = require('../Functions/antidelete');
 
 const { initializeClientUtils } = require('../Client/clientUtils'); 
-initializeClientUtils(client, store);
+
 
 const logger = pino({
     level: 'silent' 
