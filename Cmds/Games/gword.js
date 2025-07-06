@@ -204,7 +204,7 @@ async function askQuestion(groupId, context) {
     console.log(`[${groupId}] ❓ Round ${session.round}: "${clue}" — answer: "${word}"`);
 
     const questionMessage = await client.sendMessage(groupId, {
-        text: `🔤 Round ${session.round}/10\n${clue}\n📝 Reply to this message with your guess!`,
+        text: `🔤 Round ${session.round}/20\n${clue}\n📝 Reply to this message with your guess!`,
         mentions: Object.values(session.players).map(p => p.display)
     }, { quoted: m });
 
@@ -268,7 +268,7 @@ async function askQuestion(groupId, context) {
                     mentions: [session.players[responderId].display]
                 }, { quoted: msg });
 
-                if (session.round >= 10) {
+                if (session.round >= 20) {
                     return await endGame(client, groupId, session);
                 }
 
@@ -302,7 +302,7 @@ async function askQuestion(groupId, context) {
             text: `⏱️ Time's up! An example answer was *${session.currentWord}*.`
         });
 
-        if (session.round >= 10) {
+        if (session.round >= 20) {
             await endGame(client, groupId, session);
         } else {
             await askQuestion(groupId, context);
@@ -324,7 +324,7 @@ async function endGame(client, groupId, session) {
                              `🏆 Winner: @${d2.split("@")[0]}`;
 
     await client.sendMessage(groupId, {
-        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/10\n\n- @${d2.split("@")[0]}: ${s2}/10\n\n${winner} 🎉`,
+        text: `🏁 Game Over!\n\nScores:\n- @${d1.split("@")[0]}: ${s1}/20\n\n- @${d2.split("@")[0]}: ${s2}/20\n\n${winner} 🎉`,
         mentions: [d1, d2]
     });
 
